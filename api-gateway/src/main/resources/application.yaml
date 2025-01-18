@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      routes:
+        - id: PRODUCT-MS
+          uri: lb://PRODUCT-MS
+          predicates:
+            - Path=/api/product/**, /h2-console/product-ms/**
+        - id: ORDER-MS
+          uri: lb://ORDER-MS
+          predicates:
+            - Path=/api/order/**, /h2-console/order-ms/**
