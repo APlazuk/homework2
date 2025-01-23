@@ -1,16 +1,12 @@
 package pl.aplazuk.orderms.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.client.RestClientTest;
-import org.springframework.http.MediaType;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.client.MockRestServiceServer;
+import org.mockito.*;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.web.client.RestClient;
 import pl.aplazuk.orderms.dto.OrderDTO;
 import pl.aplazuk.orderms.dto.ProductDTO;
 import pl.aplazuk.orderms.model.Order;
@@ -19,53 +15,63 @@ import pl.aplazuk.orderms.repository.OrderRepository;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withResourceNotFound;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-@RestClientTest(OrderService.class)
 class OrderServiceTest {
 
     private static final String CATEGORY = "zabawki";
 
-    @Autowired
-    MockRestServiceServer server;
+    @Mock
+    private OrderRepository orderRepository;
 
-    @MockitoBean
-    OrderRepository orderRepository;
+    @Mock
+    private RestClient restClient;
 
-    @Autowired
-    OrderService orderService;
+    @Mock
+    private RestClient.RequestHeadersUriSpec requestHeadersUriSpec;
 
-    @Autowired
-    ObjectMapper objectMapper;
+    @Mock
+    private RestClient.ResponseSpec responseSpec;
+
+    @Mock
+    private RestClient.Builder restClientBuilder;
+
+    private OrderService orderService;
 
     @Captor
     ArgumentCaptor<Order> orderCaptor;
 
-    private List<ProductDTO> productsByCategory;
+    private List<ProductDTO> mockProductsByCategory;
 
     @BeforeEach
     void setUp() {
+        MockitoAnnotations.openMocks(this);
+        orderService = new OrderService(orderRepository, restClientBuilder);
+
+        when(restClientBuilder.build()).thenReturn(restClient);
+        when(restClient.get()).thenReturn(requestHeadersUriSpec);
+        when(requestHeadersUriSpec.uri(anyString(), Optional.ofNullable(any()))).thenReturn(requestHeadersUriSpec);
+        when(requestHeadersUriSpec.retrieve()).thenReturn(responseSpec);
+
         List<ProductDTO> products = List.of(
-                new ProductDTO(1L, "samochód zdalnie sterowany", "zabawki", new BigDecimal(12.55)),
-                new ProductDTO(2L, "klocki lego", "zabawki", new BigDecimal(48.89)),
-                new ProductDTO(3L, "poradnik jak pisać testy jednostkowe", "książki", new BigDecimal(25.00))
+                new ProductDTO(1L, "samochód zdalnie sterowany", "zabawki", new BigDecimal("12.55")),
+                new ProductDTO(2L, "klocki lego", "zabawki", new BigDecimal("48.89")),
+                new ProductDTO(3L, "poradnik jak pisać testy jednostkowe", "książki", new BigDecimal("25.00"))
         );
 
-        productsByCategory = products.stream().filter(product -> product.getCategory().equals(CATEGORY)).toList();
+        mockProductsByCategory = products.stream().filter(product -> product.getCategory().equals(CATEGORY)).toList();
     }
 
-
     @Test
-    public void shouldReturnSelectedProductsByCategory() throws JsonProcessingException {
+    public void shouldReturnSelectedProductsByCategory() {
         //given
-        server.expect(requestTo("http://localhost:8080/api/product/" + CATEGORY))
-                .andRespond(withSuccess(objectMapper.writeValueAsString(productsByCategory), MediaType.APPLICATION_JSON));
-        BigDecimal totalPriceForProductByCategory = productsByCategory.stream().map(ProductDTO::getPrice).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalPriceForProductByCategory = mockProductsByCategory.stream().map(ProductDTO::getPrice).reduce(BigDecimal.ZERO, BigDecimal::add);
+        when(responseSpec.body(new ParameterizedTypeReference<List<ProductDTO>>() {
+        })).thenReturn(mockProductsByCategory);
+        when(responseSpec.onStatus(any(), any())).thenReturn(responseSpec);
 
         //when
         Optional<OrderDTO> actual = orderService.collectOrderByProductListWithCategory(CATEGORY);
@@ -78,15 +84,21 @@ class OrderServiceTest {
     }
 
     @Test
-    public void shouldNotReturnOrderWithSelectedProductsByCategory() throws JsonProcessingException {
+    public void shouldNotReturnOrderWithSelectedProductsByCategory(){
         //given
-        server.expect(requestTo("http://localhost:8080/api/product/" + CATEGORY))
-                .andRespond(withResourceNotFound());
+        ArgumentCaptor<Predicate<HttpStatusCode>> statusCodeCaptor = ArgumentCaptor.forClass(Predicate.class);
+        when(responseSpec.onStatus(any(Predicate.class), any(RestClient.ResponseSpec.ErrorHandler.class))).thenReturn(responseSpec);
+        when(responseSpec.body(new ParameterizedTypeReference<List<ProductDTO>>() {
+        })).thenThrow(new NoProductsFoundException("No product found for given category"));
+
         //when
-        Optional<OrderDTO> orderDTO = orderService.collectOrderByProductListWithCategory(CATEGORY);
+        Optional<OrderDTO> actual = orderService.collectOrderByProductListWithCategory(CATEGORY);
+
         //then
         verify(orderRepository, never()).save(orderCaptor.capture());
-        assertFalse(orderDTO.isPresent());
+        verify(responseSpec, times(1)).onStatus(statusCodeCaptor.capture(), any());
+        assertTrue(statusCodeCaptor.getValue().test(HttpStatus.NOT_FOUND));
+        assertFalse(actual.isPresent());
     }
 
 }
