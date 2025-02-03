@@ -8,9 +8,9 @@ import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.Jackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
-import org.springframework.http.ResponseEntity;
 
 import java.time.Duration;
+import java.util.List;
 
 @Configuration
 public class RedisConfig {
@@ -28,7 +28,7 @@ public class RedisConfig {
                 .prefixCacheNameWith(this.getClass().getPackageName() + ".")
                 .entryTtl(Duration.ofMinutes(60))
                 .disableCachingNullValues()
-                .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(new Jackson2JsonRedisSerializer<>(ResponseEntity.class)));
+                .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(new Jackson2JsonRedisSerializer<>(List.class)));
         return RedisCacheManager.builder(redisConnectionFactory).cacheDefaults(config).build();
     }
 }
