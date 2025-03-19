@@ -7,8 +7,8 @@ spring:
         - id: PRODUCT-MS
           uri: lb://PRODUCT-MS
           predicates:
-            - Path=/api/product/**, /h2-console/product-ms/**
+            - Path=/api/product/**
         - id: ORDER-MS
           uri: lb://ORDER-MS
           predicates:
-            - Path=/api/order/**, /h2-console/order-ms/**
+            - Path=/api/order/**
